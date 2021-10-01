@@ -1,53 +1,74 @@
 /*
  * SPI.c
  *
- * Created: 6/14/2019 3:24:16 PM
+ * Created: 9/23/2021 1:30:36 PM
  *  Author: Farouk
  */ 
-#include "uc_Config.h"
-#include "StandardTypes.h"
-#include "MACROSh.h"
-#include "ATmega32A_GPIO.h"
-#include "SPI.h"
 
-uint8 toggle = 0;
+/* common lib */
+#include "BIT_MATH.h"
+#include "STD_TYPES.h"
 
-	void SPI_Init(void)
+#include "DIO_interface.h"
+#include "SPI_interface.h"
+#include "SPI_private.h"
+#include "SPI_config.h"
+
+
+
+void SPI_Init(void)
+{
+	/* Configure SPI pins first (MUST) */
+		#if  SPI_MODE == MasterMode 
+			DIO_setPinDirection(MOSI,OUTPUT);
+			DIO_setPinDirection(SS,OUTPUT);
+			DIO_setPinDirection(CLK,OUTPUT);
+			DIO_setPinDirection(MISO,INPUT);
+			SS_ENABLE();
+		#elif  SPI_MODE == SLaveMode
+			DIO_setPinDirection(MOSI,INPUT);
+			DIO_setPinDirection(SS,INPUT);
+			DIO_setPinDirection(CLK,INPUT);
+			DIO_setPinDirection(MISO,OUTPUT);
+		#endif
+		/* Setup communication options */
+		SPSR = DOUBLE_SPEED;
+		SPCR = SPI_CLK | SPI_MODE | BIT_ORDER | INTERRUPT_STATE | SCK_MODE | SPI_ENABLE;
+}
+void SPI_sendChar(uint8_t character)
+{
+	SPDR = character;
+	while(GET_BIT(SPSR,SPI_FLAG) == 0);
+}
+uint8_t SPI_ReceiveChar(void)
+{
+	while(GET_BIT(SPSR,SPI_FLAG) == 0);
+	return SPDR;
+}
+void SPI_SendStr(uint8_t* str)
+{
+	uint8_t index = 0;
+	while (str[index] != '\0')
 	{
-		
-		GPIO_DirectionSet(GPIOB,PIN6,OUTPUT);
-		SPCR = (1<<6)| (1<<5);
+		SPI_sendChar(str[index]);
+		index++;
 	}
-	void SPI_Write(uint8 Data)
+}
+
+
+
+void SPI_ReceiveStr(uint8_t* buffer)
+{
+	uint8_t index = 0;
+	do
 	{
-		SPDR = Data;
-	}
-	uint8 SPI_ReadBuffer(void)
-	{
-		while ((SPSR & (1<<7)) == 0){}
-		return SPDR;
-	}
-	
-	uint8 SPI_ExData(uint8 Data)
-	{
-		SPI_Write(Data);
-		return SPI_ReadBuffer();
-	}
-	
-	void SPI_Config(void)
-	{
-		// MSB  clk polarity = 1   clk phase = 1   SPI_clk = clk/2   slave 
-		SPCR = 0x0C;
-		SPSR = 0x01;
-		/* Enable SPI */
-		SPCR = (1<<6);
-	}
-	
-	void TakeAction(uint8 data)
-	{
-	       if(data == 0xFF)
-		   {
-	          GPIO_OutputHandle(GPIOA,PIN0,toggle);
-			  TOGGLEBIT(toggle,0);
-		   }
-	}
+		buffer[index] = SPI_ReceiveChar();
+		index++;
+	} while (buffer[index-1] != '\0');
+	buffer[index-1] = '\0';
+}
+
+void SPI_Disable(void)
+{
+	SPCR = SPI_DIS;
+}
